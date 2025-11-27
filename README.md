@@ -16,6 +16,7 @@
 - **跨平台** - 支持 Linux 和 macOS 系统
 
 ## 📁 项目结构
+```bash
 codex/
 ├── shell/ # Shell 脚本目录
 │ ├── system/ # 系统管理脚本
@@ -30,7 +31,7 @@ codex/
 │ └── bash/ # Bash 配置
 ├── docs/ # 文档目录
 └── README.md # 项目说明
-
+```
 
 ## 🚀 快速开始
 
@@ -48,9 +49,11 @@ codex/
    cd codex
 
 2. **设置执行权限**
+   ```bash
    chmod +x shell/**/*.sh
    chmod +x python/**/*.py
-3. **运行脚本**
+4. **运行脚本**
+   ```bash
    ./shell/utils/example-script.sh
    python3 python/tools/example-tool.py
 
@@ -84,13 +87,11 @@ codex/
 5.打开 Pull Request
 
 📄 许可证
-本项目采用 MIT 许可证 - 查看 LICENSE 文件了解详情。
+本项目采用 MIT 许可证。
 
 📞 联系
 如有问题，请通过以下方式联系：
 
-创建 Issue
-
-发送邮件至: 你的邮箱
+创建 Issue(https://github.com/liuwenju/codex/issues)
 
 ⭐ 如果这个项目对你有帮助，请给个星标！
