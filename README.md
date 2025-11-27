@@ -29,6 +29,8 @@ codex/
 │ ├── git/ # Git 配置
 │ ├── vim/ # Vim 配置
 │ └── bash/ # Bash 配置
+│ ├── docker_compose/ # docker-compose 配置
+│ └── nginx/ # nginx 配置
 ├── docs/ # 文档目录
 └── README.md # 项目说明
 ```
