@@ -12,6 +12,8 @@ COPY get_price.py .
 
 # 设置环境变量默认值
 ENV SERVERCHAN_SENDKEY="your_key"
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 CMD ["python", "get_price.py"]
 
