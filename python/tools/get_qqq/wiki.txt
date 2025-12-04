@@ -1,0 +1,6 @@
+
+构建镜像:
+	docker build -t idx-notify:latest .
+
+运行:
+	docker run --rm -e SERVERCHAN_SCKEY="SCTxxxxxxxxxx"  idx-notify:latest
