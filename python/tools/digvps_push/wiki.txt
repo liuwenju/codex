@@ -1,0 +1,8 @@
+构建镜像
+docker build -t digvps-updater:latest .
+
+运行并推送（只在内容有更新时）
+docker run --rm \
+  -e SERVERCHAN_SCKEY="你的SCKEY" \
+  -v /opt/digvps-cache:/app \
+  digvps-updater:latest
