@@ -1,0 +1,15 @@
+services:
+  hubproxy:
+    image: ghcr.io/sky22333/hubproxy
+    container_name: hubproxy
+    restart: always
+    ports:
+      - "55000:5000"
+    volumes:
+      - ./config.toml:/root/config.toml
+      - /etc/localtime:/etc/localtime
+    logging:
+      driver: json-file
+      options:
+        max-size: "1g"
+        max-file: "2"
