@@ -1,6 +1,17 @@
-
 构建镜像:
 	docker build -t idx-notify:latest .
 
-运行:
-	docker run --rm -e SERVERCHAN_SCKEY="SCTxxxxxxxxxx"  idx-notify:latest
+测试运行（默认不推送）:
+	docker run --rm idx-notify:latest
+
+测试指定源优先级（示例：Google Finance -> CNBC -> Nasdaq）:
+	docker run --rm -e PREFERRED_ORDER="google,cnbc,nasdaq,stooq,yahoo,investing" idx-notify:latest
+
+测试运行（带 key 也不推送）:
+	docker run --rm -e SERVERCHAN_SCKEY="SCTxxxxxxxxxx" idx-notify:latest
+
+生产推送（显式关闭 DRY_RUN）:
+	docker run --rm -e DRY_RUN=0 -e SERVERCHAN_SCKEY="SCTxxxxxxxxxx" idx-notify:latest
+
+本地脚本测试（不推送）:
+	python3 index_notify.py --dry-run
