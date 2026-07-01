@@ -1,14 +1,10 @@
 #!/bin/bash
 
 # ==================================================
-# LVM 自动挂载脚本 (支持 ext4 / xfs 选择)
-# Device : /dev/sdb
-# VG     : vg_data
-# LV     : lv_data
-# Mount  : /data
+# LVM 严格初始化挂载脚本 (支持 ext4 / xfs 选择)
+# 环境严格校验 -> 确认 -> 线性执行
 # ==================================================
 
-# set -e 确保任何一步出错立即停止运行
 set -e
 
 DISK="/dev/sdb"
@@ -17,12 +13,44 @@ LV_NAME="lv_data"
 MOUNT_POINT="/data"
 LV_PATH="/dev/${VG_NAME}/${LV_NAME}"
 
-# 1. 检查是否为 root 用户运行
+# 1. 是否 root？ -> 否→退出
 if [ "$EUID" -ne 0 ]; then
     echo "错误: 请以 root 用户或使用 sudo 运行此脚本！"
     exit 1
 fi
 
+# 2. /dev/sdb 是否存在？ -> 否→退出
+if [ ! -b "${DISK}" ]; then
+    echo "错误: 磁盘 ${DISK} 不存在，脚本退出。"
+    exit 1
+fi
+
+# 3. /dev/sdb 是否已有文件系统或分区？ -> 是→退出
+# blkid 如果能检测到内容（如 ext4, xfs, 甚至 lvm2_member），说明这块盘不是“干净”的
+if blkid "${DISK}" >/dev/null 2>&1; then
+    echo "错误: 检测到磁盘 ${DISK} 上已存在文件系统、分区或数据签名！"
+    echo "为了保护数据，不允许覆盖，脚本直接退出。"
+    exit 1
+fi
+
+# 4. /dev/sdb 是否已经是 PV？ -> 是→退出
+if pvs "${DISK}" >/dev/null 2>&1; then
+    echo "错误: 检测到磁盘 ${DISK} 已经是 PV (物理卷)！"
+    echo "为了保护现有 LVM 配置，不允许覆盖，脚本直接退出。"
+    exit 1
+fi
+
+# 额外防呆：检查 VG 或挂载点是否冲突（确保后续创建不会因重名报错）
+if vgs "${VG_NAME}" >/dev/null 2>&1; then
+    echo "错误: VG 组名 [${VG_NAME}] 在系统中已存在，请修改脚本中的 VG_NAME！"
+    exit 1
+fi
+if mount | grep -q "[[:space:]]${MOUNT_POINT}[[:space:]]"; then
+    echo "错误: 挂载点 ${MOUNT_POINT} 当前已有设备挂载，脚本退出！"
+    exit 1
+fi
+
+# 5. 文件系统选择 (保留原有的完整提示信息)
 echo "=================================================="
 echo "          请选择要格式化的文件系统类型            "
 echo "=================================================="
@@ -37,17 +65,15 @@ echo "          支持扩容，也支持缩小文件系统。"
 echo "    缺点: 默认会保留 5% 的空间给 root 用户以防占满系统。"
 echo "=================================================="
 
-# 读取用户输入
 read -p "请输入序号 [1 或 2，按 Ctrl+C 取消]: " FS_CHOICE
-
 case $FS_CHOICE in
     1)
         FS_TYPE="xfs"
-        MKFS_CMD="mkfs.xfs -f" # -f 强制覆盖旧分区表
+        MKFS_CMD="mkfs.xfs -f"
         ;;
     2)
         FS_TYPE="ext4"
-        MKFS_CMD="mkfs.ext4 -F" # -F 强制格式化
+        MKFS_CMD="mkfs.ext4 -F"
         ;;
     *)
         echo "错误: 无效输入，脚本退出。"
@@ -55,82 +81,53 @@ case $FS_CHOICE in
         ;;
 esac
 
-echo ""
-echo "========== 开始配置 LVM，文件系统: ${FS_TYPE} =========="
-
-# 2. 检查磁盘是否存在
-if [ ! -b "${DISK}" ]; then
-    echo "错误: 磁盘 ${DISK} 不存在，请检查盘符"
-    exit 1
+# 6. 用户确认(YES)
+echo "=================================================="
+echo "危险警告: 即将对全新磁盘 ${DISK} 创建 LVM 并格式化为 ${FS_TYPE}！"
+echo "在此之后，操作将无法撤销。"
+read -p "请输入大写的 YES 以确认执行 (其他输入将取消): " CONFIRM
+if [ "${CONFIRM}" != "YES" ]; then
+    echo "操作已取消，脚本退出。"
+    exit 0
 fi
+echo "=================================================="
 
-# 3. 检查并创建 PV (精确检查)
-if pvs "${DISK}" >/dev/null 2>&1; then
-    echo "[INFO] ${DISK} 已经是 PV"
-else
-    echo "创建 PV..."
-    pvcreate "${DISK}"
-fi
+# 7. 开始线性执行 (pvcreate -> vgcreate -> lvcreate -> mkfs -> mkdir -> fstab -> mount)
 
-# 4. 检查并创建 VG (精确检查)
-if vgs "${VG_NAME}" >/dev/null 2>&1; then
-    echo "[INFO] VG ${VG_NAME} 已存在"
-else
-    echo "创建 VG..."
-    vgcreate "${VG_NAME}" "${DISK}"
-fi
+echo "[1/7] 创建 PV..."
+pvcreate "${DISK}"
 
-# 5. 检查并创建 LV (精确检查)
-if lvs "${LV_PATH}" >/dev/null 2>&1; then
-    echo "[INFO] LV ${LV_NAME} 已存在"
-else
-    echo "创建 LV..."
-    lvcreate -l 100%FREE -n "${LV_NAME}" "${VG_NAME}"
-fi
+echo "[2/7] 创建 VG..."
+vgcreate "${VG_NAME}" "${DISK}"
 
-# 6. 格式化文件系统
-if blkid "${LV_PATH}" | grep -q "${FS_TYPE}"; then
-    echo "[INFO] ${LV_PATH} 已是 ${FS_TYPE} 格式，跳过格式化"
-else
-    echo "正在格式化为 ${FS_TYPE} ..."
-    ${MKFS_CMD} "${LV_PATH}"
-fi
+echo "[3/7] 创建 LV..."
+lvcreate -l 100%FREE -n "${LV_NAME}" "${VG_NAME}"
 
-# 7. 创建挂载点
-if [ ! -d "${MOUNT_POINT}" ]; then
-    mkdir -p "${MOUNT_POINT}"
-fi
+echo "[4/7] 格式化为 ${FS_TYPE}..."
+${MKFS_CMD} "${LV_PATH}"
 
-# 8. 获取 UUID 并进行空值校验
+echo "[5/7] 创建挂载点..."
+mkdir -p "${MOUNT_POINT}"
+
+echo "[6/7] 写入 /etc/fstab..."
 UUID=$(blkid -s UUID -o value "${LV_PATH}")
 if [ -z "${UUID}" ]; then
-    echo "错误: 无法获取 ${LV_PATH} 的 UUID！"
+    echo "严重错误: 无法获取新格式化分区的 UUID，已中止修改 fstab！"
     exit 1
 fi
 
-# 9. 备份 fstab
 FSTAB_BAK="/etc/fstab.bak_$(date +%F_%H-%M-%S)"
 cp /etc/fstab "${FSTAB_BAK}"
-echo "[INFO] 已备份 /etc/fstab 到 ${FSTAB_BAK}"
+echo "UUID=${UUID} ${MOUNT_POINT} ${FS_TYPE} defaults 0 0" >> /etc/fstab
+echo "      (已备份 fstab 至 ${FSTAB_BAK})"
 
-# 10. 安全写入 fstab
-if grep -q "${UUID}" /etc/fstab; then
-    echo "[INFO] fstab 中已存在该设备的配置"
-elif grep -q "[[:space:]]${MOUNT_POINT}[[:space:]]" /etc/fstab; then
-    echo "错误: fstab 中已存在挂载点 ${MOUNT_POINT} 的其他设备配置，请手动检查！"
-    exit 1
-else
-    echo "写入 /etc/fstab ..."
-    echo "UUID=${UUID} ${MOUNT_POINT} ${FS_TYPE} defaults 0 0" >> /etc/fstab
-fi
-
-# 11. 挂载
-echo "执行挂载..."
+echo "[7/7] 执行挂载..."
 mount -a
 
-echo "========== 挂载完成 =========="
-
-# 12. 显示结果 (结尾加 || true 防止 grep 找不到导致 set -e 退出)
+# 8. 完成
+echo "=================================================="
+echo "               LVM 配置及挂载完成                 "
+echo "=================================================="
 lsblk "${DISK}"
-echo "--------------------------------"
+echo "--------------------------------------------------"
 df -hT | grep -E "${MOUNT_POINT}|Filesystem" || true
